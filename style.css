@@ -390,6 +390,28 @@ dialog.modal::backdrop { background: rgba(15, 12, 10, .55); backdrop-filter: blu
 .viewer-missing span { flex: 1; min-width: 160px; }
 .viewer-box .close { position: absolute; top: 14px; right: 14px; z-index: 1; }
 
+/* ---------- updates ---------- */
+.app-version { text-align: center; color: var(--muted); font-size: 12px; margin: -24px 0 28px; }
+.update-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 300;
+  padding: 10px 16px; text-align: center; font-size: 14px; font-weight: 600;
+  background: #8b5cf6; color: #fff; box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+}
+.update-bar a { color: #fff; }
+.update-overlay {
+  position: fixed; inset: 0; z-index: 400; display: grid; place-items: center;
+  padding: 24px; text-align: center; background: rgba(0, 0, 0, .9); color: #fff;
+}
+.update-overlay img { width: 88px; height: 88px; border-radius: 20px; }
+.update-overlay h2 { margin: 16px 0 6px; font: 600 24px/1.2 Georgia, "Times New Roman", serif; }
+.update-overlay p { margin: 0 0 18px; color: #c9c4d6; }
+.spinner {
+  width: 34px; height: 34px; margin: 0 auto; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, .2); border-top-color: #a78bfa;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ---------- toast ---------- */
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);

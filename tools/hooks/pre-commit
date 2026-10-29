@@ -1,0 +1,6 @@
+#!/bin/sh
+# When app files change, give the app a new version so every open or installed
+# copy is forced to update to it.
+if git diff --cached --name-only | grep -qE '^(index\.html|download\.html|app\.js|style\.css|sw\.js|manifest\.webmanifest|icons/)'; then
+  node tools/bump-version.mjs && git add app.js version.json
+fi

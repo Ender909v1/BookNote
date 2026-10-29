@@ -16,6 +16,18 @@ A notebook for books, fields and cards with images, notes and tags. Everything i
 
 Each of these keeps its own data. To move books between them (for example PC → phone), use **Backup all** and **Import**.
 
+## Updates are automatic (and required)
+The web app and installed apps check for a new version when they open, when you come back to them, and every
+5 minutes. When there is one, BookNote updates itself and reloads right away, back to the same book, filters and
+scroll position. If you are typing a card or a name, a purple bar asks you to save or close it first, so nothing
+is lost. The version number is shown at the bottom of the library page.
+The downloaded ZIP copy can't update itself; it shows a bar with a link to download the new version.
+
+## For developers: publishing an update
+Run `node tools/bump-version.mjs` before committing app changes (or enable the hook once with
+`git config core.hooksPath tools/hooks` to do it automatically), then push to `main`.
+The new version number in `version.json` is what makes every running copy update.
+
 ## Where your data is saved
 - **Automatically** in the browser's local database (IndexedDB) on this PC. It handles images well and survives restarts.
   Keep opening the app the same way (the same `index.html` in the same browser) — another browser has its own separate storage.

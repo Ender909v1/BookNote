@@ -8,6 +8,11 @@
    "Import" to load it back.
    ========================================================= */
 
+// Set automatically by tools/bump-version.mjs on every commit that changes the app.
+// Running copies compare it with version.json on the website and update themselves.
+const APP_VERSION = '2026.10.29-223306';
+const SITE_URL = 'https://ender909v1.github.io/BookNote/';
+
 /* ---------- helpers ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -58,13 +63,16 @@ const DB = {
       req.onerror = () => reject(req.error);
     });
   },
+  writing: 0, // saves in progress (an update waits for these before reloading)
   run(store, mode, fn) {
     return new Promise((resolve, reject) => {
       const t = this.db.transaction(store, mode);
       const r = fn(t.objectStore(store));
-      t.oncomplete = () => resolve(r && r.result);
-      t.onerror = () => reject(t.error);
-      t.onabort = () => reject(t.error);
+      if (mode === 'readwrite') this.writing++;
+      const done = () => { if (mode === 'readwrite') this.writing--; };
+      t.oncomplete = () => { done(); resolve(r && r.result); };
+      t.onerror = () => { done(); reject(t.error); };
+      t.onabort = () => { done(); reject(t.error); };
     });
   },
   allBooks() { return this.run('books', 'readonly', s => s.getAll()); },
@@ -579,7 +587,8 @@ function renderHome() {
       </div>
     </header>
     <main class="library"><div class="grid" id="grid"></div></main>
-    <nav class="pager" id="pager"></nav>`;
+    <nav class="pager" id="pager"></nav>
+    <p class="app-version">BookNote version ${esc(APP_VERSION)}</p>`;
   $('#homeSearch').addEventListener('input', e => { state.query = e.target.value; state.page = 1; renderGrid(); });
   renderGrid();
 }
@@ -1509,6 +1518,108 @@ if (location.protocol.startsWith('http')) {
   navigator.serviceWorker?.register('sw.js').catch(err => console.warn('Offline support unavailable', err));
 }
 
+/* ---------- forced updates ----------
+   Every few minutes (and when the app comes back into view) BookNote asks the website
+   for the newest version number. If it changed, the app updates itself and reloads
+   right away — it only waits while a card or name is being typed, so nothing is lost.
+   Your spot (book, filters, scroll, open card) is restored after the reload. */
+let updating = false;
+
+async function latestVersion() {
+  const url = location.protocol === 'file:' ? SITE_URL + 'version.json' : 'version.json';
+  try {
+    const res = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+    return res.ok ? (await res.json()).version : null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkForUpdate() {
+  if (updating || APP_VERSION === 'dev' || !navigator.onLine) return;
+  const latest = await latestVersion();
+  if (!latest || latest === APP_VERSION) return;
+  if (location.protocol === 'file:') showUpdateBar(latest, true);
+  else forceUpdate(latest);
+}
+
+// Banner shown on top of everything (also inside an open dialog, or it would sit behind it).
+function showUpdateBar(latest, isFileCopy = false) {
+  let bar = $('.update-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'update-bar';
+    bar.setAttribute('role', 'status');
+  }
+  bar.innerHTML = isFileCopy
+    ? `A new version of BookNote is out.
+       <a href="${SITE_URL}download.html" target="_blank" rel="noopener">Download the update</a>
+       or <a href="${SITE_URL}" target="_blank" rel="noopener">use the web app</a>.`
+    : `A required update is ready. Save or close what you're editing and BookNote will update.`;
+  const host = $('dialog[open]') || document.body;
+  if (bar.parentElement !== host) host.append(bar);
+}
+
+async function forceUpdate(latest) {
+  if (updating) return;
+  updating = true;
+  // Don't throw away a card, tag or name that is being typed: wait until it's saved or
+  // closed, then give that save time to finish before reloading.
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const busy = () => $('dialog[open] form') || DB.writing > 0;
+  do {
+    while (busy()) {
+      if ($('dialog[open] form')) showUpdateBar(latest);
+      await sleep(700);
+    }
+    await sleep(1200);
+  } while (busy());
+  $('.update-bar')?.remove();
+  $$('dialog[open]').forEach(d => d.close());
+
+  const triesKey = 'booknote.updateTries:' + latest;
+  let tries = 0;
+  try { tries = Number(sessionStorage.getItem(triesKey)) || 0; } catch { /* ignore */ }
+  const overlay = document.createElement('div');
+  overlay.className = 'update-overlay';
+  document.body.append(overlay);
+  if (tries >= 2) {
+    // The website is still rolling the update out; don't get stuck reloading.
+    overlay.innerHTML = `<div><img src="icons/logo.svg" alt=""><h2>Update on its way</h2>
+      <p>The new version isn't ready on the server yet. Try again in a few minutes.</p>
+      <button class="btn primary" onclick="location.reload()">Try again</button></div>`;
+    return;
+  }
+  overlay.innerHTML = `<div><img src="icons/logo.svg" alt=""><h2>Updating BookNote…</h2>
+    <p>Getting the newest version. Your notes are safe.</p><div class="spinner"></div></div>`;
+  try { sessionStorage.setItem(triesKey, tries + 1); } catch { /* ignore */ }
+
+  saveUI();
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update();
+    // Refresh the browser's copies of the app files so the reload gets the new ones.
+    await Promise.all(['./', 'index.html', 'app.js', 'style.css', 'download.html', 'manifest.webmanifest']
+      .map(u => fetch(u, { cache: 'reload' }).catch(() => {})));
+  } catch { /* reload anyway */ }
+  try { sessionStorage.setItem('booknote.updatedTo', latest); } catch { /* ignore */ }
+  location.reload();
+}
+
+function startUpdateChecks() {
+  try {
+    if (sessionStorage.getItem('booknote.updatedTo') === APP_VERSION) {
+      sessionStorage.removeItem('booknote.updatedTo');
+      toast('BookNote was updated to the newest version');
+    }
+  } catch { /* ignore */ }
+  if (APP_VERSION === 'dev') return;
+  checkForUpdate();
+  setInterval(checkForUpdate, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+  window.addEventListener('online', checkForUpdate);
+}
+
 /* ---------- start ---------- */
 (async function init() {
   try {
@@ -1534,4 +1645,5 @@ if (location.protocol.startsWith('http')) {
     if (field?.cards.some(c => c.id === oc.cid)) viewCard(book, field, oc.cid);
   }
   state.ready = true;
+  startUpdateChecks();
 })();
