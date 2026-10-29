@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Same logo, shrunk to fit Android's round/squircle icon masks -->
+  <rect width="512" height="512" fill="#000"/>
+  <g transform="translate(256 256) scale(.78) translate(-256 -256)">
+    <rect x="152" y="96" width="236" height="344" rx="16" fill="#efe9ff"/>
+    <path d="M372 120v296M362 120v296M352 120v300" stroke="#cbbcf5" stroke-width="3"/>
+    <path d="M176 424h192M176 414h192" stroke="#cbbcf5" stroke-width="3"/>
+    <rect x="124" y="72" width="244" height="344" rx="18" fill="#8b5cf6"/>
+    <path d="M142 72h30v344h-30a18 18 0 0 1-18-18V90a18 18 0 0 1 18-18z" fill="#6d28d9"/>
+    <rect x="172" y="72" width="5" height="344" fill="#5b21b6"/>
+    <path d="M196 72h40L177 192v-60z" fill="#a78bfa" opacity=".35"/>
+    <g fill="#fff">
+      <rect x="286" y="318" width="15" height="72" rx="3"/>
+      <rect x="286" y="318" width="52" height="15" rx="3"/>
+      <rect x="286" y="346.5" width="44" height="15" rx="3"/>
+      <rect x="286" y="375" width="52" height="15" rx="3"/>
+    </g>
+  </g>
+</svg>

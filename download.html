@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Get BookNote on your PC or Android phone.">
+  <meta name="theme-color" content="#000000">
+  <title>Get BookNote</title>
+  <link rel="icon" href="icons/logo.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .get { max-width: 860px; margin: 0 auto; padding: 40px 20px 60px; }
+    .hero { text-align: center; margin-bottom: 36px; }
+    .hero img { width: 120px; height: 120px; border-radius: 26px; box-shadow: var(--shadow); }
+    .hero h1 { margin: 18px 0 6px; font: 600 38px/1.1 Georgia, "Times New Roman", serif; }
+    .hero p { margin: 0 auto; color: var(--muted); max-width: 520px; }
+    .cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+    .cta .btn { padding: 11px 22px; font-size: 16px; }
+    .platforms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .plat {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+      padding: 22px; box-shadow: var(--shadow);
+    }
+    .plat h2 { margin: 0 0 4px; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+    .plat h2 svg { width: 24px; height: 24px; }
+    .plat .sub { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+    .plat ol { margin: 0 0 16px; padding-left: 20px; }
+    .plat li { margin-bottom: 6px; }
+    .plat .btn { margin-top: 4px; }
+    .plat a:not(.btn) { color: var(--accent); font-weight: 600; }
+    .opt-title { font-weight: 600; margin: 18px 0 6px; }
+    .note {
+      margin-top: 22px; padding: 14px 18px; border-radius: 14px;
+      background: var(--surface-2); color: var(--text); font-size: 14px;
+    }
+    .foot { text-align: center; margin-top: 28px; color: var(--muted); font-size: 14px; }
+    .foot a { color: inherit; }
+    kbd { border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; font: inherit; font-size: 13px; background: var(--bg); }
+    @media (max-width: 700px) { .platforms { grid-template-columns: 1fr; } .hero h1 { font-size: 30px; } }
+  </style>
+</head>
+<body>
+  <main class="get">
+    <section class="hero">
+      <img src="icons/icon-512.png" alt="BookNote logo">
+      <h1>BookNote</h1>
+      <p>Keep books, fields and cards with images, notes and tags. Everything is saved on your own device. No account needed.</p>
+      <div class="cta">
+        <a class="btn primary" href="./">Open BookNote</a>
+        <button class="btn" id="installBtn" hidden>Install app on this device</button>
+      </div>
+    </section>
+
+    <div class="platforms">
+      <section class="plat">
+        <h2><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>PC (Windows / Mac)</h2>
+        <p class="sub">Use Chrome or Edge.</p>
+        <div class="opt-title">Install as an app (recommended)</div>
+        <ol>
+          <li>Open <a href="./">BookNote</a> in Chrome or Edge.</li>
+          <li>Click <b>Install app</b> at the top of the page (or the install icon at the right of the address bar).</li>
+          <li>BookNote gets its own window and a Start menu / desktop icon, and works offline.</li>
+        </ol>
+        <div class="opt-title">Or download the files</div>
+        <ol>
+          <li>Download the ZIP below and unzip it (for example into <b>Documents</b>).</li>
+          <li>Double-click <b>index.html</b> to open it.</li>
+        </ol>
+        <a class="btn" href="https://github.com/Ender909v1/BookNote/archive/refs/heads/main.zip">Download for PC (.zip)</a>
+      </section>
+
+      <section class="plat">
+        <h2><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>Android</h2>
+        <p class="sub">Use Chrome.</p>
+        <ol>
+          <li>Open this page on your phone in <b>Chrome</b>.</li>
+          <li>Tap <b>Install app on this device</b> above. If you don't see it, tap Chrome's <kbd>⋮</kbd> menu → <b>Install app</b> (or <b>Add to Home screen</b>).</li>
+          <li>BookNote appears in your app list with its own icon and works offline.</li>
+        </ol>
+        <a class="btn" href="./">Open BookNote on this phone</a>
+      </section>
+    </div>
+
+    <p class="note">
+      <b>Your notes stay on each device.</b> The PC app, the phone app and the downloaded files each keep their own data.
+      To move your books between them, use <b>Backup all</b> on one and <b>Import</b> on the other.
+    </p>
+
+    <p class="foot">Free and open source · <a href="https://github.com/Ender909v1/BookNote">View on GitHub</a></p>
+  </main>
+
+  <script>
+    // Show "Install app" when the browser offers it (Chrome / Edge on PC and Android).
+    let installPrompt = null;
+    const btn = document.getElementById('installBtn');
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; btn.hidden = false; });
+    window.addEventListener('appinstalled', () => { btn.hidden = true; btn.textContent = 'Installed'; });
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      installPrompt = null;
+      btn.hidden = true;
+    });
+    if (location.protocol.startsWith('http')) {
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = 'manifest.webmanifest';
+      document.head.append(link);
+      navigator.serviceWorker?.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
