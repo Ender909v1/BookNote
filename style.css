@@ -192,6 +192,18 @@ mark {
 }
 .field-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .field-name { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.drag-handle {
+  display: grid; place-items: center; width: 32px; height: 34px; margin: 0 -6px 0 -8px;
+  border: 0; background: transparent; color: var(--muted); border-radius: 8px;
+  cursor: grab; touch-action: none;
+}
+.drag-handle:hover, .drag-handle:focus-visible { background: var(--surface-2); color: var(--text); outline: 0; }
+.field.dragging {
+  position: relative; z-index: 20; border-color: var(--accent);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .35);
+}
+.fields.reordering { user-select: none; }
+body.grabbing, body.grabbing * { cursor: grabbing !important; }
 .count { color: var(--muted); font-size: 13px; }
 .field-tools { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .tagbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }

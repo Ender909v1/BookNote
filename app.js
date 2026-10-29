@@ -37,6 +37,7 @@ const ICON = {
   right: '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>',
+  burger: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
   tag: '<svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/></svg>',
@@ -939,6 +940,7 @@ function fieldHTML(f) {
   const ui = fieldUI(f.id);
   return `<section class="field" data-fid="${f.id}">
     <div class="field-head">
+      <button class="drag-handle" title="Hold and drag to move this field (or use ↑ ↓)" aria-label="Move field">${ICON.burger}</button>
       <h2 class="field-name">${esc(f.name)}</h2>
       <span class="count"></span>
       <div class="field-tools">
@@ -1034,6 +1036,110 @@ function fieldMenu(anchor, book, field) {
     }, true],
   ]);
 }
+
+/* ---------- reorder fields: hold the ☰ handle and drag up/down ----------
+   Uses pointer events so it works with a mouse and with touch (Android). */
+const visibleFields = () => $$('#fields > .field').filter(s => !s.hidden);
+
+async function saveFieldOrder(book) {
+  const ids = $$('#fields > .field').map(s => s.dataset.fid);
+  if (ids.join() === book.fields.map(f => f.id).join()) return;
+  book.fields = ids.map(id => book.fields.find(f => f.id === id));
+  await saveBook(book);
+  renderTools(book); // keeps the field picker in the same order
+}
+
+// Move `sec` in the page and slide the other fields to their new places.
+function slideMove(sec, move) {
+  const others = visibleFields().filter(s => s !== sec);
+  others.forEach(s => s.getAnimations().forEach(a => a.finish()));
+  const before = new Map(others.map(s => [s, s.getBoundingClientRect().top]));
+  move();
+  for (const s of others) {
+    const d = before.get(s) - s.getBoundingClientRect().top;
+    if (d) s.animate([{ transform: `translateY(${d}px)` }, { transform: 'none' }], { duration: 160, easing: 'ease-out' });
+  }
+}
+
+app.addEventListener('pointerdown', e => {
+  const handle = e.target.closest('.drag-handle');
+  const book = getBook(state.bookId);
+  const sec = handle?.closest('.field');
+  if (!sec || !book || e.button > 0) return;
+  e.preventDefault();
+  closeMenu();
+  closeDropdown();
+  handle.setPointerCapture(e.pointerId);
+
+  const list = $('#fields');
+  const grab = e.clientY - sec.getBoundingClientRect().top;
+  let lastY = e.clientY;
+  let shift = 0;
+  let raf = 0;
+  sec.classList.add('dragging');
+  list.classList.add('reordering');
+  document.body.classList.add('grabbing');
+
+  // Keep the field under the finger, and swap it with a neighbour once it passes the neighbour's middle.
+  const place = () => {
+    const natural = sec.getBoundingClientRect().top - shift;
+    shift = lastY - grab - natural;
+    sec.style.transform = `translateY(${shift}px)`;
+    const mid = lastY - grab + sec.offsetHeight / 2;
+    const vis = visibleFields();
+    const i = vis.indexOf(sec);
+    const prev = vis[i - 1], next = vis[i + 1];
+    const middle = s => s.getBoundingClientRect().top + s.offsetHeight / 2;
+    if (prev && mid < middle(prev)) slideMove(sec, () => prev.before(sec));
+    else if (next && mid > middle(next)) slideMove(sec, () => next.after(sec));
+    else return;
+    const moved = sec.getBoundingClientRect().top - shift;
+    shift = lastY - grab - moved;
+    sec.style.transform = `translateY(${shift}px)`;
+  };
+  // Scroll the page when dragging near the top or bottom edge.
+  const edgeScroll = () => {
+    const top = ($('.sticky-head')?.getBoundingClientRect().bottom || 0) + 40;
+    const bottom = innerHeight - 40;
+    const v = lastY < top ? lastY - top : lastY > bottom ? lastY - bottom : 0;
+    if (v) { scrollBy(0, clamp(v / 2, -24, 24)); place(); }
+    raf = requestAnimationFrame(edgeScroll);
+  };
+  raf = requestAnimationFrame(edgeScroll);
+
+  const onMove = ev => { lastY = ev.clientY; place(); };
+  const onEnd = () => {
+    cancelAnimationFrame(raf);
+    handle.removeEventListener('pointermove', onMove);
+    handle.removeEventListener('pointerup', onEnd);
+    handle.removeEventListener('pointercancel', onEnd);
+    if (shift) sec.animate([{ transform: `translateY(${shift}px)` }, { transform: 'none' }], { duration: 160, easing: 'ease-out' });
+    sec.style.transform = '';
+    sec.classList.remove('dragging');
+    list.classList.remove('reordering');
+    document.body.classList.remove('grabbing');
+    saveFieldOrder(book);
+  };
+  handle.addEventListener('pointermove', onMove);
+  handle.addEventListener('pointerup', onEnd);
+  handle.addEventListener('pointercancel', onEnd);
+});
+
+// Keyboard: focus the ☰ handle and press ↑ / ↓.
+app.addEventListener('keydown', e => {
+  if (!e.target.matches('.drag-handle') || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();
+  const book = getBook(state.bookId);
+  const sec = e.target.closest('.field');
+  const vis = visibleFields();
+  const i = vis.indexOf(sec);
+  const target = vis[e.key === 'ArrowUp' ? i - 1 : i + 1];
+  if (!target) return;
+  slideMove(sec, () => (e.key === 'ArrowUp' ? target.before(sec) : target.after(sec)));
+  e.target.focus();
+  sec.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  saveFieldOrder(book);
+});
 
 /* ---------- card editor ---------- */
 function editCard(book, field, card) {

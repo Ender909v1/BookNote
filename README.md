@@ -46,6 +46,9 @@ Going Library → book → Library also keeps each page's scroll. This "last spo
 - Front page: 4 books per row, 3 rows per page; the **+** tile creates a new book or imports one.
   Type a page number between the arrows to jump. Search finds books by title and by the text/tags inside them.
 - Inside a book: ✎ renames it; **Add field** creates a named row of cards.
+- **Reorder fields:** hold the **☰** handle at the left of a field's name and drag it up or down
+  (works with mouse and touch; the page scrolls when you drag near the top or bottom).
+  With the keyboard, focus the ☰ handle and press ↑ / ↓.
 - **Search the whole book** with the bar under the title (press `/` to jump to it). It looks through every field's
   cards (text, notes, tags and field names; all typed words must match, in any order) and hides fields with no hits.
   Narrow it further with the field picker and the **Tags ▾** dropdown. Matches are highlighted.
