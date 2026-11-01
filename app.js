@@ -10,7 +10,7 @@
 
 // Set automatically by tools/bump-version.mjs on every commit that changes the app.
 // Running copies compare it with version.json on the website and update themselves.
-const APP_VERSION = '2026.10.29-223306';
+const APP_VERSION = '2026.11.01-224759';
 const SITE_URL = 'https://ender909v1.github.io/BookNote/';
 
 /* ---------- helpers ---------- */
@@ -162,29 +162,55 @@ function hydrate(root) {
     img.src = url;
   });
 }
-// An image that can't be found: the card falls back to text only, a cover to the title only.
+// An image that can't be found is left out; a card with none left shows text only,
+// a book with a missing cover shows its title only.
 function showMissing(img) {
   if (!img.isConnected) return;
-  const card = img.closest('.ccard');
+  const strip = img.closest('.ccard-strip, .viewer-strip');
   const tile = img.closest('.tile');
-  const viewer = img.closest('.viewer-box');
-  if (card) {
-    img.closest('.ccard-img').remove();
-    card.classList.remove('has-img');
+  if (strip) {
+    (img.closest('.slide') || img).remove();
+    const viewer = strip.closest('.viewer-box');
+    viewer?.querySelector('.viewer-missing')?.removeAttribute('hidden');
+    if (strip.children.length) return updateGallery(strip);
+    strip.parentElement.remove(); // the whole gallery
+    strip.closest('.ccard')?.classList.remove('has-img');
+    if (viewer) {
+      viewer.classList.add('no-img');
+      viewer.querySelector('[data-v="save-img"]')?.remove();
+    }
   } else if (tile) {
     tile.querySelector('.tile-name')?.remove();
     const cover = img.closest('.tile-cover');
     cover.classList.add('only-title');
     cover.innerHTML = `<span>${esc(tile.title)}</span>`;
-  } else if (viewer) {
-    img.closest('.viewer-img').remove();
-    viewer.classList.add('no-img');
-    viewer.querySelector('[data-v="save-img"]')?.remove();
-    viewer.querySelector('.viewer-missing')?.removeAttribute('hidden');
   } else {
     img.remove();
   }
 }
+
+/* Image galleries (on cards and in the pop-up): a row of images you swipe or scroll
+   sideways, with arrows and an "2/5" counter when there is more than one. */
+const slideIndex = strip => Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth));
+function goSlide(strip, i) {
+  i = clamp(i, 0, strip.children.length - 1);
+  strip.scrollTo({ left: i * strip.clientWidth, behavior: 'smooth' });
+  updateGallery(strip, i);
+}
+function updateGallery(strip, target) {
+  const n = strip.children.length;
+  const i = Math.min(target ?? slideIndex(strip), n - 1);
+  const gallery = strip.parentElement;
+  const count = gallery.querySelector('.img-count');
+  if (count) { count.textContent = `${i + 1}/${n}`; count.hidden = n < 2; }
+  gallery.querySelectorAll('[data-dir]').forEach(b => {
+    b.hidden = n < 2;
+    b.disabled = +b.dataset.dir < 0 ? i <= 0 : i >= n - 1;
+  });
+}
+document.addEventListener('scroll', e => {
+  if (e.target instanceof Element && e.target.matches('.ccard-strip, .viewer-strip')) updateGallery(e.target);
+}, true);
 
 const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/avif': 'avif', 'image/x-icon': 'ico' };
 // Save a stored image back to the PC as a normal file (original name if we have it).
@@ -208,7 +234,13 @@ const state = {
   ready: false,
 };
 const getBook = id => state.books.find(b => b.id === id);
-const bookImageIds = b => [b.cover, ...b.fields.flatMap(f => f.cards.map(c => c.image))].filter(Boolean);
+const bookImageIds = b => [b.cover, ...b.fields.flatMap(f => f.cards.flatMap(c => c.images))].filter(Boolean);
+// Cards hold a list of images. Older data (and old export files) had a single `image`.
+function normalizeCard(c) {
+  if (!Array.isArray(c.images)) c.images = c.image ? [c.image] : [];
+  delete c.image;
+  return c;
+}
 
 async function saveBook(book) {
   book.updatedAt = Date.now();
@@ -752,7 +784,12 @@ async function exportBooks(books, name) {
     images[id] = await blobToDataURL(blob);
     if (blob.name) imageNames[id] = blob.name;
   }
-  const payload = { app: 'booknote', version: 1, exportedAt: new Date().toISOString(), books, images, imageNames };
+  // `image` (first image) is kept too, so older copies of BookNote can still read the file.
+  const out = books.map(b => ({
+    ...b,
+    fields: b.fields.map(f => ({ ...f, cards: f.cards.map(c => ({ ...c, image: c.images[0] || null })) })),
+  }));
+  const payload = { app: 'booknote', version: 2, exportedAt: new Date().toISOString(), books: out, images, imageNames };
   await saveFile(name, new Blob([JSON.stringify(payload)], { type: 'application/json' }));
 }
 
@@ -797,12 +834,18 @@ async function importBook(src, images, imageNames, order) {
   for (const f of Array.isArray(src.fields) ? src.fields : []) {
     const field = { id: uid(), name: String(f.name || 'Field'), cards: [] };
     for (const c of Array.isArray(f.cards) ? f.cards : []) {
+      const srcImages = Array.isArray(c.images) ? c.images : c.image ? [c.image] : [];
+      const imageIds = [];
+      for (const oldId of srcImages) {
+        const id = await img(oldId);
+        if (id) imageIds.push(id);
+      }
       field.cards.push({
         id: uid(),
         text: String(c.text || ''),
         note: String(c.note || ''),
         tags: Array.isArray(c.tags) ? [...new Set(c.tags.map(normTag).filter(Boolean))] : [],
-        image: await img(c.image),
+        images: imageIds,
         createdAt: c.createdAt || now,
       });
     }
@@ -998,9 +1041,20 @@ function renderRow(book, f) {
   hydrate(row);
 }
 
+// Arrows + counter for a gallery with several images (hidden when there is only one).
+const galleryNav = (n, attr) => n > 1
+  ? `<button class="gal-btn prev" ${attr} data-dir="-1" tabindex="-1" aria-label="Previous image" disabled>${ICON.left}</button>
+     <button class="gal-btn next" ${attr} data-dir="1" tabindex="-1" aria-label="Next image">${ICON.right}</button>
+     <span class="img-count">1/${n}</span>`
+  : '';
+
 function cardHTML(c, marks = []) {
-  return `<div class="ccard ${c.image ? 'has-img' : ''}" data-cid="${c.id}" data-act="view-card" tabindex="0">
-    ${c.image ? `<div class="ccard-img"><img data-img="${c.image}" data-thumb alt="" loading="lazy" decoding="async"></div>` : ''}
+  const n = c.images.length;
+  return `<div class="ccard ${n ? 'has-img' : ''}" data-cid="${c.id}" data-act="view-card" tabindex="0">
+    ${n ? `<div class="ccard-gallery">
+      <div class="ccard-strip">${c.images.map(id => `<img data-img="${id}" data-thumb alt="" loading="lazy" decoding="async">`).join('')}</div>
+      ${galleryNav(n, 'data-act="strip"')}
+    </div>` : ''}
     <div class="ccard-body">
       <p class="ccard-text">${hl(c.text, marks)}</p>
       ${c.note ? `<p class="ccard-note">${hl(c.note, marks)}</p>` : ''}
@@ -1037,7 +1091,7 @@ function fieldMenu(anchor, book, field) {
     }],
     ['Delete field', async () => {
       if (!await confirmBox(`Delete field “${field.name}” and its ${field.cards.length} card(s)?`)) return;
-      await removeImages(field.cards.map(c => c.image));
+      await removeImages(field.cards.flatMap(c => c.images));
       book.fields = book.fields.filter(f => f !== field);
       state.fieldUI.delete(field.id);
       await saveBook(book);
@@ -1155,15 +1209,16 @@ function editCard(book, field, card) {
   return new Promise(resolve => {
     const isNew = !card;
     let saved = null;
-    let pending = null;      // new image Blob waiting to be saved
-    let pendingURL = null;
-    let removeImg = false;
+    // Images in display order: saved ones ({id}) and new files waiting to be saved ({file}).
+    const imgs = (card?.images || []).map(id => ({ id, url: null, missing: false }));
+    const removed = []; // saved images taken out in this edit
     const tags = [...(card?.tags || [])];
 
     const d = openModal(`
       <form class="box card-form">
         <h3>${isNew ? 'New card' : 'Edit card'} <span class="opt">in ${esc(field.name)}</span></h3>
-        <div class="drop" tabindex="0"></div>
+        <div class="lbl">Images <span class="opt">optional · click, drop or paste · as many as you like</span></div>
+        <div class="imgs"></div>
         <label class="lbl">Text <textarea name="text" rows="4" placeholder="Write something…"></textarea></label>
         <label class="lbl">Note <span class="opt">optional</span><textarea name="note" rows="3" placeholder="Extra notes…"></textarea></label>
         <div class="lbl">Tags <span class="opt">optional · pick existing or type to add</span>
@@ -1181,47 +1236,61 @@ function editCard(book, field, card) {
       </form>`, 'wide');
 
     const form = $('form', d);
-    const drop = $('.drop', d);
+    const imgBox = $('.imgs', d);
     const tagBox = $('.tag-input', d);
     form.elements.text.value = card?.text || '';
     form.elements.note.value = card?.note || '';
 
-    const drawDrop = async () => {
-      const url = pending ? pendingURL : (!removeImg && card?.image ? await imageURL(card.image) : null);
-      const missing = !url && !pending && !removeImg && !!card?.image;
-      drop.classList.toggle('filled', !!url);
-      drop.innerHTML = url
-        ? `<img src="${url}" alt=""><button type="button" class="icon-btn remove" title="Remove image">${ICON.close}</button>`
-        : missing
-          ? `<div>${ICON.image}<div>This card's image is missing.<br>Click, drop or paste to add it again.</div></div>`
-          : `<div>${ICON.image}<div>Click, drop or paste an image <span class="opt">(optional)</span></div></div>`;
+    const drawImgs = () => {
+      imgBox.innerHTML = imgs.length
+        ? `<div class="img-list">${imgs.map((it, i) => `
+            <div class="img-item ${it.missing ? 'missing' : ''}">
+              ${it.missing ? `<span>Image missing</span>` : `<img src="${it.url || ''}" alt="">`}
+              ${i === 0
+                ? `<span class="first">First</span>`
+                : `<button type="button" class="mini left" data-move="${i}" title="Move earlier">${ICON.left}</button>`}
+              <button type="button" class="mini rm" data-rm="${i}" title="Remove this image">${ICON.close}</button>
+            </div>`).join('')}
+            <button type="button" class="drop img-add" title="Add more images">${ICON.plus}<span>Add</span></button>
+          </div>`
+        : `<button type="button" class="drop">${ICON.image}<span>Click, drop or paste images</span></button>`;
     };
-    const setFile = async file => {
-      if (!file || !file.type.startsWith('image/')) return;
-      if (!await canShowImage(file)) return toast(`${file.name || 'This image'} can't be shown in the browser (try JPG or PNG)`, true);
-      if (pendingURL) URL.revokeObjectURL(pendingURL);
-      pending = file;
-      pendingURL = URL.createObjectURL(file);
-      drawDrop();
-    };
-    drop.addEventListener('click', async e => {
-      if (e.target.closest('.remove')) {
-        if (pendingURL) URL.revokeObjectURL(pendingURL);
-        pending = pendingURL = null;
-        removeImg = true;
-        return drawDrop();
+    const addFiles = async files => {
+      let added = 0;
+      for (const file of files) {
+        if (!file?.type.startsWith('image/')) continue;
+        if (!await canShowImage(file)) { toast(`${file.name || 'This image'} can't be shown in the browser (try JPG or PNG)`, true); continue; }
+        imgs.push({ file, url: URL.createObjectURL(file) });
+        added++;
       }
-      const [file] = await pickFiles('image/*');
-      setFile(file);
+      if (!added) return;
+      drawImgs();
+      $('.img-list', d)?.scrollTo({ left: 1e6, behavior: 'smooth' });
+    };
+    imgBox.addEventListener('click', async e => {
+      const rm = e.target.closest('[data-rm]');
+      const mv = e.target.closest('[data-move]');
+      if (rm) {
+        const [it] = imgs.splice(+rm.dataset.rm, 1);
+        if (it.file) URL.revokeObjectURL(it.url); else removed.push(it.id);
+        return drawImgs();
+      }
+      if (mv) {
+        const i = +mv.dataset.move;
+        [imgs[i - 1], imgs[i]] = [imgs[i], imgs[i - 1]];
+        return drawImgs();
+      }
+      if (e.target.closest('.drop')) addFiles(await pickFiles('image/*', true));
     });
-    drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drop.click(); } });
-    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
-    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-    drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); setFile(e.dataTransfer.files[0]); });
+    imgBox.addEventListener('dragover', e => { e.preventDefault(); imgBox.classList.add('over'); });
+    imgBox.addEventListener('dragleave', e => { if (!imgBox.contains(e.relatedTarget)) imgBox.classList.remove('over'); });
+    imgBox.addEventListener('drop', e => { e.preventDefault(); imgBox.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
     d.addEventListener('paste', e => {
-      const file = [...e.clipboardData.files].find(f => f.type.startsWith('image/'));
-      if (file) { e.preventDefault(); setFile(file); }
+      const files = [...e.clipboardData.files].filter(f => f.type.startsWith('image/'));
+      if (files.length) { e.preventDefault(); addFiles(files); }
     });
+    // Show the saved images (a missing one is marked, and dropped when saving).
+    Promise.all(imgs.map(async it => { it.url = await imageURL(it.id); it.missing = !it.url; })).then(drawImgs);
 
     const drawTags = () => {
       $('.tag-chips', d).innerHTML = tags.map((t, i) =>
@@ -1259,17 +1328,17 @@ function editCard(book, field, card) {
       const text = form.elements.text.value.trim();
       if (!text) { $('.err', d).textContent = 'Please write some text for this card.'; form.elements.text.focus(); return; }
 
-      let image = card?.image || null;
-      if (pending) {
-        let id;
-        try { id = await storeImage(pending); } catch (err) { $('.err', d).textContent = err.message; return; }
-        await removeImages([image]);
-        image = id;
-      } else if (removeImg && image) {
-        await removeImages([image]);
-        image = null;
+      // Store the new images; if one fails, undo the ones already stored.
+      const newIds = new Map();
+      try {
+        for (const it of imgs) if (it.file) newIds.set(it, await storeImage(it.file));
+      } catch (err) {
+        await removeImages([...newIds.values()]);
+        $('.err', d).textContent = err.message;
+        return;
       }
-      const data = { text, note: form.elements.note.value.trim(), tags: [...tags], image };
+      const images = imgs.filter(it => !it.missing).map(it => newIds.get(it) || it.id);
+      const data = { text, note: form.elements.note.value.trim(), tags: [...tags], images };
       if (isNew) {
         card = { id: uid(), createdAt: Date.now(), ...data };
         field.cards.unshift(card);
@@ -1277,53 +1346,65 @@ function editCard(book, field, card) {
         Object.assign(card, data);
       }
       await saveBook(book);
+      await removeImages([...removed, ...imgs.filter(it => it.missing).map(it => it.id)]);
       saved = card;
       d.close();
     });
     d.addEventListener('close', () => {
-      if (pendingURL) URL.revokeObjectURL(pendingURL);
+      imgs.forEach(it => { if (it.file) URL.revokeObjectURL(it.url); });
       resolve(saved);
     });
 
-    drawDrop();
+    drawImgs();
     drawTags();
     form.elements.text.focus();
   });
 }
 
 /* ---------- card viewer (pop-up) ---------- */
-function viewCard(book, field, cid) {
+function viewCard(book, field, cid, startImage = 0) {
   let list = filteredCards(book, field);
   if (!list.some(c => c.id === cid)) list = field.cards;
   let idx = list.findIndex(c => c.id === cid);
   if (idx < 0) return;
   const marks = [...words(bookUI(book.id).q), ...words(fieldUI(field.id).q)];
   const d = openModal('', 'viewer');
+  const strip = () => $('.viewer-strip', d);
 
   const draw = () => {
     const c = list[idx];
-    d.innerHTML = `<div class="viewer-box ${c.image ? '' : 'no-img'}">
+    const n = c.images.length;
+    d.innerHTML = `<div class="viewer-box ${n ? '' : 'no-img'}">
       <button class="icon-btn close" data-v="close" title="Close">${ICON.close}</button>
-      ${c.image ? `<div class="viewer-img"><img data-img="${c.image}" alt=""></div>` : ''}
+      ${n ? `<div class="viewer-img">
+        <div class="viewer-strip">${c.images.map(id => `<div class="slide" data-id="${id}"><img data-img="${id}" alt=""></div>`).join('')}</div>
+        ${galleryNav(n, 'data-v="slide"')}
+      </div>` : ''}
       <div class="viewer-info">
         <div class="viewer-meta">${esc(field.name)} · ${idx + 1} / ${list.length}</div>
-        ${c.image ? `<div class="viewer-missing" hidden>${ICON.image}<span>This card's image is missing.</span>
-          <button class="btn sm" data-v="reattach">Add image again</button></div>` : ''}
+        ${n ? `<div class="viewer-missing" hidden>${ICON.image}<span>Some images of this card are missing.</span>
+          <button class="btn sm" data-v="add-images">Add images</button></div>` : ''}
         <div class="viewer-text">${hl(c.text, marks)}</div>
         ${c.note ? `<div class="viewer-note"><h4>Note</h4><p>${hl(c.note, marks)}</p></div>` : ''}
         ${c.tags.length ? `<div class="viewer-tags">${c.tags.map(t =>
           `<button class="chip" data-v="tag" data-tag="${esc(t)}" title="Show all cards in this book with this tag">#${esc(t)}</button>`).join('')}</div>` : ''}
         <div class="viewer-actions">
-          <button class="icon-btn" data-v="prev" title="Previous (←)" ${idx <= 0 ? 'disabled' : ''}>${ICON.left}</button>
-          <button class="icon-btn" data-v="next" title="Next (→)" ${idx >= list.length - 1 ? 'disabled' : ''}>${ICON.right}</button>
+          <button class="icon-btn" data-v="prev" title="Previous card" ${idx <= 0 ? 'disabled' : ''}>${ICON.left}</button>
+          <button class="icon-btn" data-v="next" title="Next card" ${idx >= list.length - 1 ? 'disabled' : ''}>${ICON.right}</button>
           <span class="spacer"></span>
-          ${c.image ? `<button class="btn" data-v="save-img" title="Save the original image file to your PC">${ICON.download} Save image</button>` : ''}
+          ${n ? `<button class="btn" data-v="save-img" title="Save the image you're looking at to your PC">${ICON.download} Save image</button>` : ''}
           <button class="btn" data-v="edit">${ICON.pencil} Edit</button>
           <button class="btn danger" data-v="delete">Delete</button>
         </div>
       </div>
     </div>`;
     hydrate(d);
+    const s = strip();
+    if (s) {
+      s.scrollLeft = startImage * s.clientWidth;
+      updateGallery(s);
+    }
+    startImage = 0;
     state.openCard = { bookId: book.id, fid: field.id, cid: c.id };
     scheduleSave();
   };
@@ -1343,26 +1424,38 @@ function viewCard(book, field, cid) {
         break;
       case 'delete':
         if (!await confirmBox('Delete this card?')) return;
-        await removeImages([c.image]);
+        await removeImages(c.images);
         field.cards = field.cards.filter(x => x !== c);
         await saveBook(book);
         refreshBookView(book);
         d.close();
         break;
-      case 'save-img':
-        saveImageToPC(c.image, c.text.split('\n')[0].slice(0, 40));
+      case 'slide':
+        goSlide(strip(), slideIndex(strip()) + Number(b.dataset.dir));
         break;
-      case 'reattach': {
-        const [file] = await pickFiles('image/*');
-        if (!file) return;
-        let id;
-        try { id = await storeImage(file); } catch (err) { return toast(err.message, true); }
-        await removeImages([c.image]);
-        c.image = id;
+      case 'save-img': {
+        const s = strip();
+        const id = s?.children[slideIndex(s)]?.dataset.id;
+        if (id) saveImageToPC(id, c.text.split('\n')[0].slice(0, 40));
+        break;
+      }
+      case 'add-images': {
+        // Some images are gone: keep the ones that still exist and add the picked ones.
+        const files = await pickFiles('image/*', true);
+        if (!files.length) return;
+        const added = [];
+        for (const file of files) {
+          try { added.push(await storeImage(file)); } catch (err) { toast(err.message, true); }
+        }
+        if (!added.length) return;
+        const kept = [];
+        for (const id of c.images) if (await DB.getImage(id).catch(() => null)) kept.push(id);
+        await removeImages(c.images.filter(id => !kept.includes(id)));
+        c.images = [...kept, ...added];
         await saveBook(book);
         draw();
         refreshBookView(book);
-        toast('Image added');
+        toast(added.length > 1 ? `${added.length} images added` : 'Image added');
         break;
       }
       case 'tag':
@@ -1373,10 +1466,16 @@ function viewCard(book, field, cid) {
         break;
     }
   });
+  // ← → go through this card's images first, then on to the previous / next card.
   d.addEventListener('keydown', e => {
     if (e.target !== d && e.target.closest('textarea, input')) return;
-    if (e.key === 'ArrowLeft') move(-1);
-    if (e.key === 'ArrowRight') move(1);
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const step = e.key === 'ArrowLeft' ? -1 : 1;
+    const s = strip();
+    const next = s ? slideIndex(s) + step : -1;
+    if (s && next >= 0 && next < s.children.length) goSlide(s, next);
+    else move(step);
   });
   draw();
 }
@@ -1426,7 +1525,16 @@ app.addEventListener('click', async e => {
       if (!filteredCards(book, field).includes(card)) toast('Card saved, but hidden by the current search or filter');
       break;
     }
-    case 'view-card': viewCard(book, field, el.dataset.cid); break;
+    case 'view-card': {
+      const strip = el.querySelector('.ccard-strip');
+      viewCard(book, field, el.dataset.cid, strip ? slideIndex(strip) : 0);
+      break;
+    }
+    case 'strip': {
+      const strip = el.closest('.ccard-gallery').querySelector('.ccard-strip');
+      goSlide(strip, slideIndex(strip) + Number(el.dataset.dir));
+      break;
+    }
     case 'tag': {
       const ui = fieldUI(field.id);
       const t = el.dataset.tag;
@@ -1625,6 +1733,7 @@ function startUpdateChecks() {
   try {
     await DB.open();
     state.books = await DB.allBooks();
+    state.books.forEach(b => b.fields.forEach(f => f.cards.forEach(normalizeCard)));
   } catch (err) {
     app.innerHTML = `<p class="fatal">Could not open local storage: ${esc(err?.message || err)}.<br>
       Try opening this page in Chrome or Edge.</p>`;

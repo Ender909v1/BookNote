@@ -43,11 +43,11 @@ Clearing your browser's "site data" deletes the local database, so make a backup
   Deleting or moving the file on your PC doesn't affect BookNote. Formats the browser can't show (e.g. HEIC, TIFF)
   are refused with a message — convert them to JPG/PNG first.
 - The library and card rows use a small preview copy so big photos stay fast; the pop-up shows the original.
-- **Get an image back as a file:** open the card → **Save image** (or the cover menu → **Save cover image**).
+- **Get an image back as a file:** open the card, go to the image → **Save image** (or the cover menu → **Save cover image**).
   It saves the original file, with its original name, starting in your Pictures folder.
 - Backups (`.json`) contain every original image and its file name.
-- **If an image is ever missing**, the card simply shows its text (a book shows only its title).
-  Open the card and click **Add image again**, or pick a new image in **Edit**.
+- **If an image is ever missing**, it is simply left out; a card with no images left shows its text (a book shows
+  only its title). Open the card and click **Add images**, or add new ones in **Edit**.
 
 ## Picks up where you left off
 Close the tab and open `index.html` again: you return to the same book (or library page), with the same searches,
@@ -70,5 +70,9 @@ Going Library → book → Library also keeps each page's scroll. This "last spo
   narrow the list; ↑ ↓ and Enter work too. **+ Add** is always offered for what you typed: a new tag is created,
   or if that tag already exists, the existing one is picked instead (no duplicates). Tags added from a filter
   are kept on the book's tag list even before any card uses them; an unused tag shows × to delete it.
-- Cards: text is required; image, note and tags are optional. Paste, drop or click to add an image.
-  Click a card to open it large; use ← → to move between cards.
+- Cards: text is required; images, note and tags are optional. Click a card to open it large.
+- **Many images per card:** in the card editor, click, drop or paste as many images as you like. Each image has
+  **×** to remove it and **←** to move it earlier; the first one is what the card shows first. Click **Add** for more.
+- **Scroll through a card's images:** swipe sideways on a phone; on a PC hover the card and use the arrows
+  (or Shift + mouse wheel). The badge shows which one you're on (e.g. 2/5). Opening the card starts at that image.
+  In the pop-up, ← → go through the images first, then on to the previous / next card.
