@@ -65,11 +65,15 @@ Going Library → book → Library also keeps each page's scroll. This "last spo
   cards (text, notes, tags and field names; all typed words must match, in any order) and hides fields with no hits.
   Narrow it further with the field picker and the **Tags ▾** dropdown. Matches are highlighted.
   Click a tag inside an opened card to filter the whole book by it.
-- Each field also has its own search box and **Tags ▾** dropdown, which stack on top of the book-wide one.
+- Each field also has its own search box and **Tags ▾** dropdown, which narrow the book-wide results further.
+- **Filtering by tags:** ticking several tags shows cards with **any** of them. Choose #1 and #2 and you see cards
+  with #1, cards with #2, and cards with both. Ticked tags are highlighted and listed first on each card, so you can
+  see why it is showing. A card shows up to 4 tags plus "+3" for the rest; opening the card lists them all.
 - **Tag dropdowns** (filters and the card editor): tick existing tags (numbers = how many cards use them), or type to
-  narrow the list; ↑ ↓ and Enter work too. **+ Add** is always offered for what you typed: a new tag is created,
-  or if that tag already exists, the existing one is picked instead (no duplicates). Tags added from a filter
-  are kept on the book's tag list even before any card uses them; an unused tag shows × to delete it.
+  narrow the list; ↑ ↓ and Enter work too. Tags already ticked stay at the top, and **Clear** unticks them all.
+  **+ Add** is always offered for what you typed: a new tag is created, or if that tag already exists, the existing
+  one is picked instead (no duplicates). Tags added from a filter are kept on the book's tag list even before any
+  card uses them; an unused tag shows × to delete it.
 - Cards: text is required; images, note and tags are optional. Click a card to open it large.
 - **Many images per card:** in the card editor, click, drop or paste as many images as you like. Each image has
   **×** to remove it and **←** to move it earlier; the first one is what the card shows first. Click **Add** for more.

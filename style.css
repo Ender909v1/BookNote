@@ -174,7 +174,6 @@ mark {
   overflow-x: auto; padding: 3px 0; scrollbar-width: thin;
 }
 .chip .n { margin-left: 4px; opacity: .6; font-size: 11px; }
-.chip.global { opacity: .65; cursor: default; }
 .result { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .no-results {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -255,7 +254,8 @@ button.chip:hover { border-color: var(--muted); }
   margin: 6px 0 0; color: var(--muted); font-size: 13px; white-space: pre-wrap;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.ccard-tags { padding: 0 12px 10px; display: flex; gap: 4px; overflow: hidden; flex: none; }
+.ccard-tags { padding: 0 12px 10px; display: flex; flex-wrap: wrap; gap: 4px; max-height: 76px; overflow: hidden; flex: none; }
+.ccard-tags .chip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .ccard-add {
   align-items: center; justify-content: center; gap: 8px;
   border: 2px dashed var(--border); background: transparent; color: var(--muted);
@@ -405,6 +405,13 @@ dialog.modal::backdrop { background: rgba(15, 12, 10, .55); backdrop-filter: blu
 .dd-item.add { color: var(--accent); font-weight: 600; }
 .dd-item.add svg { width: 16px; height: 16px; }
 .dd-empty { padding: 10px 8px; color: var(--muted); font-size: 13px; }
+.dd-item.zero .t { color: var(--muted); }
+.dd-hint { padding: 0 8px 6px; color: var(--muted); font-size: 12px; }
+.dd-clear {
+  flex: none; margin-top: 4px; padding: 7px 8px; border: 0; border-top: 1px solid var(--border);
+  background: transparent; color: var(--accent); font-weight: 600; font-size: 13px; text-align: left;
+}
+.dd-clear:hover { background: var(--surface-2); }
 
 .dd-btn { white-space: nowrap; }
 .dd-btn svg { width: 16px; height: 16px; }

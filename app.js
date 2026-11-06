@@ -10,7 +10,7 @@
 
 // Set automatically by tools/bump-version.mjs on every commit that changes the app.
 // Running copies compare it with version.json on the website and update themselves.
-const APP_VERSION = '2026.11.01-224759';
+const APP_VERSION = '2026.11.06-193357';
 const SITE_URL = 'https://ender909v1.github.io/BookNote/';
 
 /* ---------- helpers ---------- */
@@ -283,14 +283,16 @@ async function removeBookTag(book, tag) {
 }
 // Cards of a field that pass the book-wide filter, plus (when local) the field's own filter.
 // Book-wide words may also match the field's name, e.g. "characters hero".
+// Tags: a card shows if it has ANY of the ticked tags, it doesn't need all of them.
 function filteredCards(book, f, local = true) {
   const g = bookUI(book.id), ui = fieldUI(f.id);
   const gw = words(g.q), fw = local ? words(ui.q) : [];
-  const tags = local ? [...g.tags, ...ui.tags] : [...g.tags];
   const name = f.name.toLowerCase();
+  const hasAnyTag = (c, ticked) => !ticked.size || c.tags.some(t => ticked.has(t));
   return f.cards.filter(c => {
     const hay = cardHay(c);
-    return hasAll(name + '\n' + hay, gw) && hasAll(hay, fw) && tags.every(t => c.tags.includes(t));
+    return hasAll(name + '\n' + hay, gw) && hasAll(hay, fw) &&
+      hasAnyTag(c, g.tags) && (!local || hasAnyTag(c, ui.tags));
   });
 }
 
@@ -339,8 +341,8 @@ window.addEventListener('scroll', closeMenu, true);
 window.addEventListener('resize', closeMenu);
 
 /* Tag dropdown: pick existing tags (multi-select) or type to match; "+ Add" when nothing matches.
-   o = { options() -> [{tag, count, locked?, removable?}], selected() -> Set,
-         onToggle(tag), onAdd(tag), onRemove?(tag) } */
+   o = { options() -> [{tag, count, removable?}], selected() -> Set, hint?,
+         onToggle(tag), onAdd(tag), onRemove?(tag), onClear?() } */
 let dropEl = null;
 function closeDropdown() {
   if (!dropEl) return;
@@ -357,11 +359,15 @@ function tagDropdown(anchor, o) {
   el.anchor = anchor;
   el.innerHTML = `
     <div class="dd-search">${ICON.search}<input placeholder="Search or add a tag…" autocomplete="off"></div>
-    <div class="dd-list"></div>`;
+    ${o.hint ? `<div class="dd-hint">${esc(o.hint)}</div>` : ''}
+    <div class="dd-list"></div>
+    <button type="button" class="dd-clear" hidden></button>`;
   // Inside a modal dialog the dropdown must live in the dialog, or it would sit behind it.
   (anchor.closest('dialog') || document.body).append(el);
   const input = $('input', el);
   const list = $('.dd-list', el);
+  const clearBtn = $('.dd-clear', el);
+  const pinned = new Set(o.selected()); // tags ticked when it opened stay at the top of the list
   let rows = [];
   let active = 0;
 
@@ -370,24 +376,29 @@ function tagDropdown(anchor, o) {
     const w = Math.min(320, Math.max(260, r.width));
     el.style.width = w + 'px';
     el.style.left = clamp(r.left, 8, innerWidth - w - 8) + 'px';
+    // Open on the side with room; a long list scrolls inside whatever space there is.
+    el.style.maxHeight = '';
     const h = el.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + h > innerHeight - 8 && r.top - h - 6 > 8) top = r.top - h - 6;
-    el.style.top = top + 'px';
+    const below = innerHeight - r.bottom - 14;
+    const above = r.top - 14;
+    const up = h > below && above > below;
+    el.style.maxHeight = Math.min(h, up ? above : below) + 'px';
+    el.style.top = (up ? r.top - el.offsetHeight - 6 : r.bottom + 6) + 'px';
   };
   const draw = () => {
     const q = normTag(input.value);
     const sel = o.selected();
     const opts = o.options();
-    rows = opts.filter(x => !q || x.tag.includes(q));
+    rows = opts.filter(x => !q || x.tag.includes(q)).sort((a, b) => pinned.has(b.tag) - pinned.has(a.tag));
     // "+ Add" is always offered; if the tag already exists it just picks that one.
     if (q) rows.push({ tag: q, add: true, exists: opts.some(x => x.tag === q) });
     active = clamp(active, 0, Math.max(0, rows.length - 1));
+    clearBtn.hidden = !o.onClear || !sel.size;
+    clearBtn.textContent = `Clear ${sel.size} ticked`;
     list.innerHTML = rows.length
       ? rows.map((r, i) => r.add
         ? `<button type="button" class="dd-item add ${i === active ? 'active' : ''}" data-i="${i}">${ICON.plus}<span class="t">Add “#${esc(r.tag)}”</span></button>`
-        : `<button type="button" class="dd-item ${sel.has(r.tag) ? 'on' : ''} ${i === active ? 'active' : ''}" data-i="${i}"
-             ${r.locked ? 'disabled title="Already filtered for the whole book"' : ''}>
+        : `<button type="button" class="dd-item ${sel.has(r.tag) ? 'on' : ''} ${r.count ? '' : 'zero'} ${i === active ? 'active' : ''}" data-i="${i}">
              <span class="check">${sel.has(r.tag) ? ICON.check : ''}</span>
              <span class="t">#${esc(r.tag)}</span>
              <span class="n">${r.count}</span>
@@ -399,12 +410,14 @@ function tagDropdown(anchor, o) {
   };
   const choose = async (i, removing = false) => {
     const r = rows[i];
-    if (!r || (r.locked && !removing)) return;
+    if (!r) return;
+    active = i; // keep this row in view instead of jumping back to the top of a long list
     if (removing) await o.onRemove(r.tag);
     else if (r.add) {
       if (!r.exists) await o.onAdd(r.tag);
       else if (!o.selected().has(r.tag)) await o.onToggle(r.tag); // never un-picks it
       input.value = '';
+      active = 0;
     }
     else await o.onToggle(r.tag);
     if (dropEl === el) { draw(); input.focus(); }
@@ -415,6 +428,11 @@ function tagDropdown(anchor, o) {
     const b = e.target.closest('.dd-item');
     if (b) choose(+b.dataset.i, !!e.target.closest('[data-rm]'));
   });
+  clearBtn.addEventListener('pointerdown', e => e.preventDefault());
+  clearBtn.addEventListener('click', async () => {
+    await o.onClear();
+    if (dropEl === el) { draw(); input.focus(); }
+  });
   input.addEventListener('input', () => { active = 0; draw(); });
   input.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, rows.length - 1); draw(); }
@@ -424,12 +442,13 @@ function tagDropdown(anchor, o) {
   });
 
   const onDown = e => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeDropdown(); };
+  const onScroll = e => { if (!el.contains(e.target)) position(); }; // not when scrolling the list itself
   document.addEventListener('pointerdown', onDown, true);
-  window.addEventListener('scroll', position, true);
+  window.addEventListener('scroll', onScroll, true);
   window.addEventListener('resize', position);
   el.cleanup = () => {
     document.removeEventListener('pointerdown', onDown, true);
-    window.removeEventListener('scroll', position, true);
+    window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', position);
   };
   el.redraw = draw;
@@ -924,28 +943,30 @@ function renderTools(book) {
 function openBookTagFilter(anchor, book) {
   const g = bookUI(book.id);
   tagDropdown(anchor, {
+    hint: 'Shows cards with any ticked tag.',
     options: () => allTags(book),
     selected: () => g.tags,
     onToggle: t => { g.tags.has(t) ? g.tags.delete(t) : g.tags.add(t); refreshBookView(book); },
     onAdd: async t => { await addBookTag(book, t); refreshBookView(book); },
     onRemove: async t => { await removeBookTag(book, t); g.tags.delete(t); refreshBookView(book); },
+    onClear: () => { g.tags.clear(); refreshBookView(book); },
   });
 }
 
-// Same dropdown for one field: counts are for this field; tags already filtered book-wide are locked on.
+// Same dropdown for one field; its counts are for this field only.
 function openFieldTagFilter(anchor, book, field) {
-  const g = bookUI(book.id);
   const ui = fieldUI(field.id);
   tagDropdown(anchor, {
+    hint: 'Shows cards in this field with any ticked tag.',
     options: () => allTags(book).map(x => ({
       ...x,
       count: field.cards.filter(c => c.tags.includes(x.tag)).length,
-      locked: g.tags.has(x.tag),
     })),
-    selected: () => new Set([...ui.tags, ...g.tags]),
+    selected: () => ui.tags,
     onToggle: t => { ui.tags.has(t) ? ui.tags.delete(t) : ui.tags.add(t); renderRow(book, field); },
     onAdd: async t => { await addBookTag(book, t); refreshBookView(book); },
     onRemove: async t => { await removeBookTag(book, t); ui.tags.delete(t); refreshBookView(book); },
+    onClear: () => { ui.tags.clear(); renderRow(book, field); },
   });
 }
 
@@ -1017,6 +1038,7 @@ function renderRow(book, f) {
   for (const t of [...ui.tags]) if (!known.has(t)) ui.tags.delete(t);
   const cards = filteredCards(book, f);
   const marks = [...words(g.q), ...words(ui.q)];
+  const ticked = new Set([...g.tags, ...ui.tags]);
 
   const total = f.cards.length;
   sec.querySelector('.count').textContent =
@@ -1025,18 +1047,16 @@ function renderRow(book, f) {
   const btn = sec.querySelector('[data-act="field-tag-filter"]');
   btn.querySelector('.lbl-txt').textContent = ui.tags.size ? `Tags (${ui.tags.size})` : 'Tags';
   btn.classList.toggle('on', ui.tags.size > 0);
-  const globalTags = [...g.tags].filter(t => !ui.tags.has(t)).sort();
-  sec.querySelector('.tagbar').innerHTML = ui.tags.size || globalTags.length
+  sec.querySelector('.tagbar').innerHTML = ui.tags.size
     ? `<span class="tagbar-label">Filter:</span>` +
-      globalTags.map(t => `<span class="chip on global" title="Filtered for the whole book">#${esc(t)}</span>`).join('') +
       [...ui.tags].sort().map(t => `<button class="chip on" data-act="tag" data-tag="${esc(t)}" title="Remove filter">#${esc(t)} ×</button>`).join('') +
-      (ui.tags.size ? `<button class="chip clear" data-act="clear-tags">Clear</button>` : '')
+      `<button class="chip clear" data-act="clear-tags">Clear</button>`
     : '';
 
   const row = sec.querySelector('.row');
   row.innerHTML =
     `<button class="ccard ccard-add" data-act="add-card">${ICON.plus}<span>New card</span></button>` +
-    cards.map(c => cardHTML(c, marks)).join('') +
+    cards.map(c => cardHTML(c, marks, ticked)).join('') +
     (!cards.length && total ? `<p class="row-empty">No cards match.</p>` : '');
   hydrate(row);
 }
@@ -1048,7 +1068,22 @@ const galleryNav = (n, attr) => n > 1
      <span class="img-count">1/${n}</span>`
   : '';
 
-function cardHTML(c, marks = []) {
+// Ticked tags first, so you can see why a card is showing.
+const tagsTickedFirst = (c, ticked) => [...c.tags].sort((a, b) => ticked.has(b) - ticked.has(a));
+
+// Only a few tags fit on a card, the rest become "+3". The pop-up lists them all.
+const CARD_TAGS = 4;
+function cardTagsHTML(c, ticked) {
+  if (!c.tags.length) return '';
+  const tags = tagsTickedFirst(c, ticked);
+  const rest = tags.slice(CARD_TAGS);
+  return `<div class="ccard-tags">
+    ${tags.slice(0, CARD_TAGS).map(t => `<span class="chip sm ${ticked.has(t) ? 'on' : ''}" title="#${esc(t)}">#${esc(t)}</span>`).join('')}
+    ${rest.length ? `<span class="chip sm" title="${esc(rest.map(t => '#' + t).join(' '))}">+${rest.length}</span>` : ''}
+  </div>`;
+}
+
+function cardHTML(c, marks = [], ticked = new Set()) {
   const n = c.images.length;
   return `<div class="ccard ${n ? 'has-img' : ''}" data-cid="${c.id}" data-act="view-card" tabindex="0">
     ${n ? `<div class="ccard-gallery">
@@ -1059,7 +1094,7 @@ function cardHTML(c, marks = []) {
       <p class="ccard-text">${hl(c.text, marks)}</p>
       ${c.note ? `<p class="ccard-note">${hl(c.note, marks)}</p>` : ''}
     </div>
-    ${c.tags.length ? `<div class="ccard-tags">${c.tags.map(t => `<span class="chip sm">#${esc(t)}</span>`).join('')}</div>` : ''}
+    ${cardTagsHTML(c, ticked)}
   </div>`;
 }
 
@@ -1312,6 +1347,7 @@ function editCard(book, field, card) {
       selected: () => new Set(tags),
       onToggle: toggleTag,
       onAdd: toggleTag,
+      onClear: () => { tags.length = 0; drawTags(); },
     });
     tagBox.addEventListener('click', e => {
       const b = e.target.closest('[data-i]');
@@ -1368,6 +1404,7 @@ function viewCard(book, field, cid, startImage = 0) {
   let idx = list.findIndex(c => c.id === cid);
   if (idx < 0) return;
   const marks = [...words(bookUI(book.id).q), ...words(fieldUI(field.id).q)];
+  const ticked = new Set([...bookUI(book.id).tags, ...fieldUI(field.id).tags]);
   const d = openModal('', 'viewer');
   const strip = () => $('.viewer-strip', d);
 
@@ -1386,8 +1423,8 @@ function viewCard(book, field, cid, startImage = 0) {
           <button class="btn sm" data-v="add-images">Add images</button></div>` : ''}
         <div class="viewer-text">${hl(c.text, marks)}</div>
         ${c.note ? `<div class="viewer-note"><h4>Note</h4><p>${hl(c.note, marks)}</p></div>` : ''}
-        ${c.tags.length ? `<div class="viewer-tags">${c.tags.map(t =>
-          `<button class="chip" data-v="tag" data-tag="${esc(t)}" title="Show all cards in this book with this tag">#${esc(t)}</button>`).join('')}</div>` : ''}
+        ${c.tags.length ? `<div class="viewer-tags">${tagsTickedFirst(c, ticked).map(t =>
+          `<button class="chip ${ticked.has(t) ? 'on' : ''}" data-v="tag" data-tag="${esc(t)}" title="Add this tag to the book's filter">#${esc(t)}</button>`).join('')}</div>` : ''}
         <div class="viewer-actions">
           <button class="icon-btn" data-v="prev" title="Previous card" ${idx <= 0 ? 'disabled' : ''}>${ICON.left}</button>
           <button class="icon-btn" data-v="next" title="Next card" ${idx >= list.length - 1 ? 'disabled' : ''}>${ICON.right}</button>
