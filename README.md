@@ -63,7 +63,11 @@ Going Library → book → Library also keeps each page's scroll. This "last spo
   With the keyboard, focus the ☰ handle and press ↑ / ↓.
 - **Search the whole book** with the bar under the title (press `/` to jump to it). It looks through every field's
   cards (text, notes, tags and field names; all typed words must match, in any order) and hides fields with no hits.
-  Narrow it further with the field picker and the **Tags ▾** dropdown. Matches are highlighted.
+  Narrow it further with the **Tags ▾** dropdown. Matches are highlighted.
+- **Choose which fields to show:** the **All fields ▾** dropdown lists every field with a tick box and its number of
+  cards. Ticked fields are shown and unticked ones are hidden, so you can show as many as you want. **Show all** and
+  **Hide all** change them all at once (to show just two of many: Hide all, then tick those two). The button shows how
+  many are visible, such as "Fields (2/5)". Your choice is remembered, and hidden fields keep their cards.
   Click a tag inside an opened card to filter the whole book by it.
 - Each field also has its own search box and **Tags ▾** dropdown, which narrow the book-wide results further.
 - **Filtering by tags:** ticking several tags shows cards with **any** of them. Choose #1 and #2 and you see cards

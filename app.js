@@ -10,7 +10,7 @@
 
 // Set automatically by tools/bump-version.mjs on every commit that changes the app.
 // Running copies compare it with version.json on the website and update themselves.
-const APP_VERSION = '2026.11.06-193357';
+const APP_VERSION = '2026.11.06-201424';
 const SITE_URL = 'https://ender909v1.github.io/BookNote/';
 
 /* ---------- helpers ---------- */
@@ -43,6 +43,7 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>',
   burger: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  rows: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>',
   download: '<svg viewBox="0 0 24 24"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
   tag: '<svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/></svg>',
@@ -255,10 +256,10 @@ const bookMatches = (b, ws) =>
 
 // Book-wide search & filter (the bar under the book title).
 function bookUI(bid) {
-  if (!state.bookUI.has(bid)) state.bookUI.set(bid, { q: '', tags: new Set(), field: '' });
+  if (!state.bookUI.has(bid)) state.bookUI.set(bid, { q: '', tags: new Set(), hidden: new Set() });
   return state.bookUI.get(bid);
 }
-const bookFiltering = g => !!(words(g.q).length || g.tags.size || g.field);
+const bookFiltering = g => !!(words(g.q).length || g.tags.size || g.hidden.size);
 // Per-field search & tag filter (inside each field).
 function fieldUI(fid) {
   if (!state.fieldUI.has(fid)) state.fieldUI.set(fid, { q: '', tags: new Set() });
@@ -340,9 +341,11 @@ document.addEventListener('click', e => {
 window.addEventListener('scroll', closeMenu, true);
 window.addEventListener('resize', closeMenu);
 
-/* Tag dropdown: pick existing tags (multi-select) or type to match; "+ Add" when nothing matches.
-   o = { options() -> [{tag, count, removable?}], selected() -> Set, hint?,
-         onToggle(tag), onAdd(tag), onRemove?(tag), onClear?() } */
+/* Tick-list dropdown for tags and fields: tick several, or type to match. With onAdd it also offers "+ Add".
+   o = { options() -> [{tag, label?, count, removable?}], selected() -> Set, onToggle(tag),
+         onAdd?(tag), onRemove?(tag), actions?(selected) -> [[label, run, disabled?]],
+         hint?, placeholder?, emptyText?, keepOrder? }
+   `tag` is the value; `label` is the text shown, "#tag" if left out. */
 let dropEl = null;
 function closeDropdown() {
   if (!dropEl) return;
@@ -350,7 +353,8 @@ function closeDropdown() {
   dropEl.remove();
   dropEl = null;
 }
-function tagDropdown(anchor, o) {
+const clearTicked = (sel, run) => (sel.size ? [[`Clear ${sel.size} ticked`, run]] : []);
+function pickDropdown(anchor, o) {
   if (dropEl?.anchor === anchor) return closeDropdown(); // clicking the button again closes it
   closeDropdown();
   closeMenu();
@@ -358,17 +362,18 @@ function tagDropdown(anchor, o) {
   el.className = 'dropdown';
   el.anchor = anchor;
   el.innerHTML = `
-    <div class="dd-search">${ICON.search}<input placeholder="Search or add a tag…" autocomplete="off"></div>
+    <div class="dd-search">${ICON.search}<input placeholder="${esc(o.placeholder || 'Search or add a tag…')}" autocomplete="off"></div>
     ${o.hint ? `<div class="dd-hint">${esc(o.hint)}</div>` : ''}
     <div class="dd-list"></div>
-    <button type="button" class="dd-clear" hidden></button>`;
+    <div class="dd-actions" hidden></div>`;
   // Inside a modal dialog the dropdown must live in the dialog, or it would sit behind it.
   (anchor.closest('dialog') || document.body).append(el);
   const input = $('input', el);
   const list = $('.dd-list', el);
-  const clearBtn = $('.dd-clear', el);
-  const pinned = new Set(o.selected()); // tags ticked when it opened stay at the top of the list
+  const foot = $('.dd-actions', el);
+  const pinned = new Set(o.keepOrder ? [] : o.selected()); // ticked when it opened: stay at the top of the list
   let rows = [];
+  let actions = [];
   let active = 0;
 
   const position = () => {
@@ -389,22 +394,24 @@ function tagDropdown(anchor, o) {
     const q = normTag(input.value);
     const sel = o.selected();
     const opts = o.options();
-    rows = opts.filter(x => !q || x.tag.includes(q)).sort((a, b) => pinned.has(b.tag) - pinned.has(a.tag));
+    rows = opts.filter(x => !q || (x.label ?? x.tag).toLowerCase().includes(q)).sort((a, b) => pinned.has(b.tag) - pinned.has(a.tag));
     // "+ Add" is always offered; if the tag already exists it just picks that one.
-    if (q) rows.push({ tag: q, add: true, exists: opts.some(x => x.tag === q) });
+    if (q && o.onAdd) rows.push({ tag: q, add: true, exists: opts.some(x => x.tag === q) });
     active = clamp(active, 0, Math.max(0, rows.length - 1));
-    clearBtn.hidden = !o.onClear || !sel.size;
-    clearBtn.textContent = `Clear ${sel.size} ticked`;
+    actions = o.actions?.(sel) || [];
+    foot.hidden = !actions.length;
+    foot.innerHTML = actions.map(([label, , off], i) =>
+      `<button type="button" data-a="${i}" ${off ? 'disabled' : ''}>${esc(label)}</button>`).join('');
     list.innerHTML = rows.length
       ? rows.map((r, i) => r.add
         ? `<button type="button" class="dd-item add ${i === active ? 'active' : ''}" data-i="${i}">${ICON.plus}<span class="t">Add “#${esc(r.tag)}”</span></button>`
         : `<button type="button" class="dd-item ${sel.has(r.tag) ? 'on' : ''} ${r.count ? '' : 'zero'} ${i === active ? 'active' : ''}" data-i="${i}">
              <span class="check">${sel.has(r.tag) ? ICON.check : ''}</span>
-             <span class="t">#${esc(r.tag)}</span>
+             <span class="t">${esc(r.label ?? '#' + r.tag)}</span>
              <span class="n">${r.count}</span>
              ${o.onRemove && r.removable ? `<span class="rm" data-rm title="Delete this unused tag">×</span>` : ''}
            </button>`).join('')
-      : `<div class="dd-empty">${opts.length ? 'No match' : 'No tags yet. Type a name to add one.'}</div>`;
+      : `<div class="dd-empty">${opts.length ? 'No match' : o.emptyText || 'No tags yet. Type a name to add one.'}</div>`;
     list.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
     position();
   };
@@ -428,9 +435,11 @@ function tagDropdown(anchor, o) {
     const b = e.target.closest('.dd-item');
     if (b) choose(+b.dataset.i, !!e.target.closest('[data-rm]'));
   });
-  clearBtn.addEventListener('pointerdown', e => e.preventDefault());
-  clearBtn.addEventListener('click', async () => {
-    await o.onClear();
+  foot.addEventListener('pointerdown', e => e.preventDefault());
+  foot.addEventListener('click', async e => {
+    const b = e.target.closest('[data-a]');
+    if (!b || b.disabled) return;
+    await actions[+b.dataset.a][1]();
     if (dropEl === el) { draw(); input.focus(); }
   });
   input.addEventListener('input', () => { active = 0; draw(); });
@@ -561,7 +570,7 @@ function loadUI() {
   state.page = Number(s.page) || 1;
   for (const [k, y] of Object.entries(s.scroll || {})) state.scrollPos.set(k, Number(y) || 0);
   for (const [bid, b] of Object.entries(s.books || {})) {
-    state.bookUI.set(bid, { q: String(b.q || ''), tags: new Set(b.tags || []), field: String(b.field || '') });
+    state.bookUI.set(bid, { q: String(b.q || ''), tags: new Set(b.tags || []), hidden: new Set(b.hidden || []) });
     for (const [fid, f] of Object.entries(b.fields || {})) {
       state.fieldUI.set(fid, { q: String(f.q || ''), tags: new Set(f.tags || []), x: Number(f.x) || 0 });
     }
@@ -582,7 +591,7 @@ function saveUI() {
       if (ui && (ui.q || ui.tags.size || ui.x)) fields[f.id] = { q: ui.q, tags: [...ui.tags], x: ui.x || 0 };
     }
     if ((g && bookFiltering(g)) || Object.keys(fields).length) {
-      books[b.id] = { q: g?.q || '', tags: [...(g?.tags || [])], field: g?.field || '', fields };
+      books[b.id] = { q: g?.q || '', tags: [...(g?.tags || [])], hidden: [...(g?.hidden || [])], fields };
     }
   }
   const scroll = Object.fromEntries([...state.scrollPos].filter(([k]) => k === 'home' || getBook(k)));
@@ -900,7 +909,7 @@ function renderBook(book) {
         <label class="search">${ICON.search}
           <input id="bookSearch" type="search" placeholder="Search all fields…" value="${esc(g.q)}" autocomplete="off" title="Shortcut: /">
         </label>
-        <select id="fieldFilter" class="select" title="Show one field"></select>
+        <button class="btn dd-btn" id="fieldPickBtn" data-act="field-pick" title="Choose which fields to show">${ICON.rows}<span class="lbl-txt">All fields</span>${ICON.down}</button>
         <button class="btn dd-btn" id="tagFilterBtn" data-act="tag-filter" title="Filter by tags">${ICON.tag}<span class="lbl-txt">Tags</span>${ICON.down}</button>
         <div class="gtags" id="gtags"></div>
         <span class="result" id="resultInfo"></span>
@@ -927,12 +936,11 @@ function renderTools(book) {
   const g = bookUI(book.id);
   const known = new Set(allTags(book).map(x => x.tag));
   for (const t of [...g.tags]) if (!known.has(t)) g.tags.delete(t);
-  if (g.field && !book.fields.some(f => f.id === g.field)) g.field = '';
+  for (const id of [...g.hidden]) if (!book.fields.some(f => f.id === id)) g.hidden.delete(id);
 
-  const sel = $('#fieldFilter');
-  sel.innerHTML = `<option value="">All fields</option>` +
-    book.fields.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
-  sel.value = g.field;
+  const total = book.fields.length;
+  $('#fieldPickBtn .lbl-txt').textContent = g.hidden.size ? `Fields (${total - g.hidden.size}/${total})` : 'All fields';
+  $('#fieldPickBtn').classList.toggle('on', g.hidden.size > 0);
 
   $('#tagFilterBtn .lbl-txt').textContent = g.tags.size ? `Tags (${g.tags.size})` : 'Tags';
   $('#tagFilterBtn').classList.toggle('on', g.tags.size > 0);
@@ -940,23 +948,41 @@ function renderTools(book) {
     `<button class="chip on" data-act="gtag" data-tag="${esc(t)}" title="Remove filter">#${esc(t)} ×</button>`).join('');
 }
 
+// Which fields to show: ticked ones are shown, unticked ones hidden (so a new field starts shown).
+function openFieldPicker(anchor, book) {
+  const g = bookUI(book.id);
+  pickDropdown(anchor, {
+    hint: 'Ticked fields are shown. Untick to hide.',
+    placeholder: 'Search fields…',
+    emptyText: 'No fields yet.',
+    keepOrder: true,
+    options: () => book.fields.map(f => ({ tag: f.id, label: f.name, count: f.cards.length })),
+    selected: () => new Set(book.fields.filter(f => !g.hidden.has(f.id)).map(f => f.id)),
+    onToggle: id => { g.hidden.has(id) ? g.hidden.delete(id) : g.hidden.add(id); refreshBookView(book); },
+    actions: () => [
+      ['Show all', () => { g.hidden.clear(); refreshBookView(book); }, !g.hidden.size],
+      ['Hide all', () => { book.fields.forEach(f => g.hidden.add(f.id)); refreshBookView(book); }, g.hidden.size === book.fields.length],
+    ],
+  });
+}
+
 function openBookTagFilter(anchor, book) {
   const g = bookUI(book.id);
-  tagDropdown(anchor, {
+  pickDropdown(anchor, {
     hint: 'Shows cards with any ticked tag.',
     options: () => allTags(book),
     selected: () => g.tags,
     onToggle: t => { g.tags.has(t) ? g.tags.delete(t) : g.tags.add(t); refreshBookView(book); },
     onAdd: async t => { await addBookTag(book, t); refreshBookView(book); },
     onRemove: async t => { await removeBookTag(book, t); g.tags.delete(t); refreshBookView(book); },
-    onClear: () => { g.tags.clear(); refreshBookView(book); },
+    actions: sel => clearTicked(sel, () => { g.tags.clear(); refreshBookView(book); }),
   });
 }
 
 // Same dropdown for one field; its counts are for this field only.
 function openFieldTagFilter(anchor, book, field) {
   const ui = fieldUI(field.id);
-  tagDropdown(anchor, {
+  pickDropdown(anchor, {
     hint: 'Shows cards in this field with any ticked tag.',
     options: () => allTags(book).map(x => ({
       ...x,
@@ -966,7 +992,7 @@ function openFieldTagFilter(anchor, book, field) {
     onToggle: t => { ui.tags.has(t) ? ui.tags.delete(t) : ui.tags.add(t); renderRow(book, field); },
     onAdd: async t => { await addBookTag(book, t); refreshBookView(book); },
     onRemove: async t => { await removeBookTag(book, t); ui.tags.delete(t); refreshBookView(book); },
-    onClear: () => { ui.tags.clear(); renderRow(book, field); },
+    actions: sel => clearTicked(sel, () => { ui.tags.clear(); renderRow(book, field); }),
   });
 }
 
@@ -974,17 +1000,20 @@ function openFieldTagFilter(anchor, book, field) {
 function applyBookFilter(book) {
   const g = bookUI(book.id);
   const active = bookFiltering(g);
+  const searching = words(g.q).length || g.tags.size;
   let cards = 0, fields = 0, total = 0;
   for (const f of book.fields) {
     total += f.cards.length;
     const n = filteredCards(book, f, false).length;
-    const show = g.field ? f.id === g.field : (!active || n > 0);
+    const show = !g.hidden.has(f.id) && (!searching || n > 0);
     const sec = $(`.field[data-fid="${f.id}"]`);
+    const wasHidden = sec?.hidden;
     if (sec) sec.hidden = !show;
     if (!show) continue;
     fields++;
     cards += n;
     renderRow(book, f);
+    if (wasHidden) sec.querySelector('.row').scrollLeft = fieldUI(f.id).x || 0; // hiding reset its sideways scroll
   }
   const s = n => (n === 1 ? '' : 's');
   $('#resultInfo').textContent = active
@@ -992,6 +1021,7 @@ function applyBookFilter(book) {
     : `${total} card${s(total)} · ${book.fields.length} field${s(book.fields.length)}`;
   $('#clearAll').hidden = !active;
   $('#noResults').hidden = !(active && fields === 0);
+  $('#noResults p').textContent = g.hidden.size === book.fields.length ? 'All fields are hidden.' : 'Nothing in this book matches.';
 }
 
 function refreshBookView(book) {
@@ -1003,7 +1033,7 @@ function clearBookFilter(book) {
   const g = bookUI(book.id);
   g.q = '';
   g.tags.clear();
-  g.field = '';
+  g.hidden.clear();
   const input = $('#bookSearch');
   if (input) input.value = '';
   refreshBookView(book);
@@ -1109,7 +1139,6 @@ async function addField(book) {
   const g = bookUI(book.id);
   g.q = '';
   g.tags.clear();
-  g.field = '';
   renderBook(book);
   $(`.field[data-fid="${field.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -1144,7 +1173,6 @@ async function saveFieldOrder(book) {
   if (ids.join() === book.fields.map(f => f.id).join()) return;
   book.fields = ids.map(id => book.fields.find(f => f.id === id));
   await saveBook(book);
-  renderTools(book); // keeps the field picker in the same order
 }
 
 // Move `sec` in the page and slide the other fields to their new places.
@@ -1337,7 +1365,7 @@ function editCard(book, field, card) {
       i >= 0 ? tags.splice(i, 1) : tags.push(t);
       drawTags();
     };
-    const openTags = () => tagDropdown(tagBox, {
+    const openTags = () => pickDropdown(tagBox, {
       // Book tags, plus any new ones added to this card that aren't saved yet.
       options: () => {
         const list = allTags(book);
@@ -1347,7 +1375,7 @@ function editCard(book, field, card) {
       selected: () => new Set(tags),
       onToggle: toggleTag,
       onAdd: toggleTag,
-      onClear: () => { tags.length = 0; drawTags(); },
+      actions: sel => clearTicked(sel, () => { tags.length = 0; drawTags(); }),
     });
     tagBox.addEventListener('click', e => {
       const b = e.target.closest('[data-i]');
@@ -1588,6 +1616,7 @@ app.addEventListener('click', async e => {
       break;
     }
     case 'clear-all': clearBookFilter(book); break;
+    case 'field-pick': openFieldPicker(el, book); break;
     case 'tag-filter': openBookTagFilter(el, book); break;
     case 'field-tag-filter': openFieldTagFilter(el, book, field); break;
   }
@@ -1606,14 +1635,6 @@ app.addEventListener('input', e => {
   const field = book.fields.find(f => f.id === fid);
   fieldUI(fid).q = e.target.value;
   renderRow(book, field);
-});
-
-app.addEventListener('change', e => {
-  if (e.target.id !== 'fieldFilter') return;
-  const book = getBook(state.bookId);
-  bookUI(book.id).field = e.target.value;
-  applyBookFilter(book);
-  window.scrollTo({ top: 0 });
 });
 
 // "/" jumps to the search box of the current page.

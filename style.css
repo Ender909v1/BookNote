@@ -164,11 +164,6 @@ mark {
 }
 .book-tools { display: flex; align-items: center; gap: 10px; padding: 2px 28px 12px; }
 .book-tools .search { flex: 0 1 340px; }
-.select {
-  padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--text); font: inherit; max-width: 180px; cursor: pointer;
-}
-.select:focus { outline: 0; border-color: var(--accent); }
 .gtags {
   flex: 1; min-width: 0; display: flex; gap: 6px; align-items: center;
   overflow-x: auto; padding: 3px 0; scrollbar-width: thin;
@@ -407,11 +402,13 @@ dialog.modal::backdrop { background: rgba(15, 12, 10, .55); backdrop-filter: blu
 .dd-empty { padding: 10px 8px; color: var(--muted); font-size: 13px; }
 .dd-item.zero .t { color: var(--muted); }
 .dd-hint { padding: 0 8px 6px; color: var(--muted); font-size: 12px; }
-.dd-clear {
-  flex: none; margin-top: 4px; padding: 7px 8px; border: 0; border-top: 1px solid var(--border);
-  background: transparent; color: var(--accent); font-weight: 600; font-size: 13px; text-align: left;
+.dd-actions { flex: none; display: flex; gap: 4px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.dd-actions button {
+  flex: 1; padding: 6px 8px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--accent); font-weight: 600; font-size: 13px;
 }
-.dd-clear:hover { background: var(--surface-2); }
+.dd-actions button:hover:not(:disabled) { background: var(--surface-2); }
+.dd-actions button:disabled { color: var(--muted); opacity: .6; cursor: default; }
 
 .dd-btn { white-space: nowrap; }
 .dd-btn svg { width: 16px; height: 16px; }
